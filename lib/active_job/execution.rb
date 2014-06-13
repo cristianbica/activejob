@@ -9,12 +9,9 @@ module ActiveJob
       include ActiveSupport::Rescuable
     end
 
-    def execute(job_id, *serialized_args)
-      self.job_id    = job_id
-      self.arguments = Arguments.deserialize(serialized_args)
-
+    def execute
       run_callbacks :perform do
-        perform *arguments
+        perform *Arguments.deserialize(arguments)
       end
     rescue => exception
       rescue_with_handler(exception) || raise(exception)

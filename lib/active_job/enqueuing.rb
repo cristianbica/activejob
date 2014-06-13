@@ -13,9 +13,9 @@ module ActiveJob
       # Returns an instance of the job class queued with args available in
       # Job#arguments.
       def enqueue(*args)
-        new(args).tap do |job|
+        job_or_instantiate(*args).tap do |job|
           job.run_callbacks :enqueue do
-            queue_adapter.enqueue self, job.job_id, *Arguments.serialize(args)
+            queue_adapter.enqueue job.to_enqueueable_hash
           end
         end
       end
@@ -37,35 +37,58 @@ module ActiveJob
       # Returns an instance of the job class queued with args available in
       # Job#arguments and the timestamp in Job#enqueue_at.
       def enqueue_at(timestamp, *args)
-        new(args).tap do |job|
+        job_or_instantiate(*args).tap do |job|
           job.enqueued_at = timestamp
 
           job.run_callbacks :enqueue do
-            queue_adapter.enqueue_at self, timestamp.to_f, job.job_id, *Arguments.serialize(args)
+            queue_adapter.enqueue_at timestamp.to_f, job.to_enqueueable_hash
           end
         end
       end
+
+      protected
+        def job_or_instantiate(*args)
+          args.first.is_a?(self) ? args.first : new('arguments' => args)
+        end
     end
 
     included do
       attr_accessor :arguments
       attr_accessor :enqueued_at
+      attr_reader   :job_id
+      attr_reader   :queue
     end
 
-    def initialize(arguments = nil)
-      @arguments = arguments
+    def initialize(options = {})
+      @options = options
+      @arguments = options['arguments']
+      @job_id    = options['job_id'] || SecureRandom.uuid
+      self.queue = options['queue']
+    end
+
+    def queue=(part_name)
+      @queue = [self.class.queue_base_name, part_name].compact.join("_")
     end
 
     def retry_now
-      self.class.enqueue *arguments
+      self.class.enqueue self
     end
 
     def retry_in(interval)
-      self.class.enqueue_in interval, *arguments
+      self.class.enqueue_in interval, self
     end
 
     def retry_at(timestamp)
-      self.class.enqueue_at timestamp, *arguments
+      self.class.enqueue_at timestamp, self
+    end
+
+    def to_enqueueable_hash
+      {
+        'job_class' => self.class.name,
+        'job_id'    => job_id,
+        'queue'     => queue,
+        'arguments' => Arguments.serialize(arguments)
+      }
     end
   end
 end
