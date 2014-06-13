@@ -13,9 +13,13 @@ module ActiveJob
       # Returns an instance of the job class queued with args available in
       # Job#arguments.
       def enqueue(*args)
-        new(args).tap do |job|
+        new.tap do |job|
           job.run_callbacks :enqueue do
-            queue_adapter.enqueue self, job.job_id, *Arguments.serialize(args)
+            queue_adapter.enqueue \
+              'job_class' => job.class,
+              'job_id'    => job.job_id,
+              'queue'     => job.queue,
+              'arguments' => Arguments.serialize(args)
           end
         end
       end
@@ -37,11 +41,15 @@ module ActiveJob
       # Returns an instance of the job class queued with args available in
       # Job#arguments and the timestamp in Job#enqueue_at.
       def enqueue_at(timestamp, *args)
-        new(args).tap do |job|
+        new.tap do |job|
           job.enqueued_at = timestamp
 
           job.run_callbacks :enqueue do
-            queue_adapter.enqueue_at self, timestamp.to_f, job.job_id, *Arguments.serialize(args)
+            queue_adapter.enqueue_at timestamp.to_f, \
+              'job_class' => job.class,
+              'job_id'    => job.job_id,
+              'queue'     => job.queue,
+              'arguments' => Arguments.serialize(args)
           end
         end
       end
@@ -52,8 +60,10 @@ module ActiveJob
       attr_accessor :enqueued_at
     end
 
-    def initialize(arguments = nil)
-      @arguments = arguments
+    def initialize(options={})
+      @arguments = options['arguments']
+      @queue     = options['queue'] if options['queue']
+      @job_id    = options['job_id']
     end
 
     def retry_now
